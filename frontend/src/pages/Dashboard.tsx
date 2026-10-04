@@ -6,10 +6,19 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 export default function Dashboard() {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [incidents, setIncidents] = useState<Incident[]>([])
+  const [live, setLive] = useState<any[]>([])
 
   useEffect(() => {
     getCameras().then(setCameras).catch(() => {})
     getIncidents().then(setIncidents).catch(() => {})
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/incidents`)
+    ws.onmessage = e => {
+      try {
+        const data = JSON.parse(e.data)
+        setLive(prev => [data, ...prev].slice(0, 10))
+      } catch {}
+    }
+    return () => ws.close()
   }, [])
 
   const byType = Object.entries(
@@ -42,6 +51,16 @@ export default function Dashboard() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      <h2 className="text-lg font-semibold mb-2">Live Alerts</h2>
+      <ul className="space-y-2 mb-6">
+        {live.map((l, i) => (
+          <li key={i} className="bg-red-950/40 border border-red-800 rounded p-3">
+            {l.type} — {l.description}
+          </li>
+        ))}
+        {live.length === 0 && <li className="text-slate-400">Waiting for live events…</li>}
+      </ul>
 
       <h2 className="text-lg font-semibold mb-2">Recent Incidents</h2>
       <ul className="space-y-2">

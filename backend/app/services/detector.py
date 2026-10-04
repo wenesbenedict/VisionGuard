@@ -43,7 +43,9 @@ def detect_frame(frame) -> Dict[str, List[Dict[str, Any]]]:
     persons, helmets, vests = [], [], []
 
     if person_model is not None:
-        results = person_model(frame, verbose=False)
+        results = person_model.track(
+            frame, persist=True, tracker="bytetrack.yaml", verbose=False
+        )
         for r in results:
             for det in r.boxes:
                 cls = int(det.cls[0])
@@ -52,7 +54,12 @@ def detect_frame(frame) -> Dict[str, List[Dict[str, Any]]]:
                 if conf < MIN_CONFIDENCE:
                     continue
                 if label == "person":
-                    persons.append({"bbox": _bbox(det), "confidence": conf})
+                    tid = int(det.id[0]) if det.id is not None else None
+                    persons.append({
+                        "bbox": _bbox(det),
+                        "confidence": conf,
+                        "track_id": tid,
+                    })
 
     if ppe_model is not None:
         results = ppe_model(frame, verbose=False)
@@ -109,6 +116,7 @@ def analyze_video(video_path: str):
         raise ValueError(f"Cannot open video: {video_path}")
 
     idx = 0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     try:
         while True:
             ok, frame = cap.read()
@@ -121,7 +129,7 @@ def analyze_video(video_path: str):
             violations = evaluate_ppe(
                 dets["persons"], dets["helmets"], dets["vests"]
             )
-            yield idx, frame, dets, violations
+            yield idx / fps, frame, dets, violations
     finally:
         cap.release()
 

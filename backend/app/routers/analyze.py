@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import UPLOAD_DIR
 from ..database import get_db
-from ..services import detector, incident_engine
+from ..services import detector, incident_engine, zones
+from ..services.ws import manager
 
 router = APIRouter(prefix="/api/analyze", tags=["analyze"])
 
@@ -32,10 +33,25 @@ async def analyze_video(
     persons_total = 0
     incident_ids = []
 
-    for idx, frame, dets, violations in detector.analyze_video(path):
+    for t, frame, dets, violations in detector.analyze_video(path):
         frames_processed += 1
         persons_total += len(dets["persons"])
         incident_engine.store_detections(db, camera_id, dets["persons"])
+
+        for b in zones.zone_breaches(db, camera_id, dets["persons"], now=t):
+            snapshot = detector.save_snapshot(frame, prefix=f"zone{camera_id}")
+            inc = incident_engine.create_zone_breach(
+                db, camera_id, b, snapshot, path,
+            )
+            incident_ids.append(inc.id)
+            await manager.broadcast({
+                "event": "incident",
+                "id": inc.id,
+                "type": inc.type,
+                "severity": inc.severity,
+                "description": inc.description,
+                "timestamp": str(inc.timestamp),
+            })
 
         for v in violations:
             snapshot = detector.save_snapshot(frame, prefix=f"cam{camera_id}")
@@ -43,6 +59,14 @@ async def analyze_video(
                 db, camera_id, v, frame, snapshot, path,
             )
             incident_ids.append(inc.id)
+            await manager.broadcast({
+                "event": "incident",
+                "id": inc.id,
+                "type": inc.type,
+                "severity": inc.severity,
+                "description": inc.description,
+                "timestamp": str(inc.timestamp),
+            })
 
     return schemas.AnalysisResult(
         camera_id=camera_id,

@@ -41,6 +41,17 @@ class Incident(Base):
     camera = relationship("Camera", back_populates="incidents")
 
 
+class SafetyZone(Base):
+    __tablename__ = "safety_zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
+    name = Column(String, nullable=False)
+    zone_type = Column(String, default="RESTRICTED")
+    coordinates = Column(JSON)  # list of [x, y] points
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class DetectionEvent(Base):
     __tablename__ = "detections"
 

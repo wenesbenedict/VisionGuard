@@ -59,6 +59,21 @@ class DetectionEventOut(BaseModel):
         from_attributes = True
 
 
+class SafetyZoneCreate(BaseModel):
+    camera_id: int
+    name: str
+    zone_type: str = "RESTRICTED"
+    coordinates: List[List[float]]
+
+
+class SafetyZoneOut(SafetyZoneCreate):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AnalysisResult(BaseModel):
     camera_id: int
     frames_processed: int

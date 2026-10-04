@@ -3,6 +3,8 @@ import Dashboard from './pages/Dashboard'
 import Incidents from './pages/Incidents'
 import Cameras from './pages/Cameras'
 import Analyze from './pages/Analyze'
+import Zones from './pages/Zones'
+import Analytics from './pages/Analytics'
 
 export default function App() {
   return (
@@ -14,6 +16,8 @@ export default function App() {
           <Link to="/incidents" className="hover:text-sky-400">Incidents</Link>
           <Link to="/cameras" className="hover:text-sky-400">Cameras</Link>
           <Link to="/analyze" className="hover:text-sky-400">Analyze</Link>
+          <Link to="/zones" className="hover:text-sky-400">Zones</Link>
+          <Link to="/analytics" className="hover:text-sky-400">Analytics</Link>
         </nav>
         <main className="p-6 max-w-6xl mx-auto">
           <Routes>
@@ -21,6 +25,8 @@ export default function App() {
             <Route path="/incidents" element={<Incidents />} />
             <Route path="/cameras" element={<Cameras />} />
             <Route path="/analyze" element={<Analyze />} />
+            <Route path="/zones" element={<Zones />} />
+            <Route path="/analytics" element={<Analytics />} />
           </Routes>
         </main>
       </div>

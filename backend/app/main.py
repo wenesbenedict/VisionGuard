@@ -4,7 +4,9 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from .database import Base, engine
-from .routers import health, cameras, incidents, analyze
+from fastapi import WebSocket, WebSocketDisconnect
+from .routers import health, cameras, incidents, analyze, zones, analytics
+from .services.ws import manager
 from .config import SNAPSHOT_DIR, UPLOAD_DIR
 
 Base.metadata.create_all(bind=engine)
@@ -27,3 +29,15 @@ app.include_router(health.router)
 app.include_router(cameras.router)
 app.include_router(incidents.router)
 app.include_router(analyze.router)
+app.include_router(zones.router)
+app.include_router(analytics.router)
+
+
+@app.websocket("/ws/incidents")
+async def ws_incidents(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
