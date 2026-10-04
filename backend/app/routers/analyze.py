@@ -2,23 +2,39 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..config import UPLOAD_DIR
-from ..database import get_db
-from ..services import detector, incident_engine, zones
+from ..database import SessionLocal, get_db
+from ..services import detector, incident_engine, zones, fall
+from ..services.ai_summary import summarize_incident
 from ..services.ws import manager
+from ..services import auth
 
 router = APIRouter(prefix="/api/analyze", tags=["analyze"])
 
 
+def _summarize(incident_ids):
+    db = SessionLocal()
+    try:
+        for iid in incident_ids:
+            inc = db.get(models.Incident, iid)
+            if inc and not inc.ai_summary:
+                inc.ai_summary = summarize_incident(inc)
+                db.commit()
+    finally:
+        db.close()
+
+
 @router.post("/video", response_model=schemas.AnalysisResult)
 async def analyze_video(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     camera_id: int = Form(...),
     db: Session = Depends(get_db),
+    user=Depends(auth.require_role("ADMIN", "SAFETY_OFFICER")),
 ):
     if not db.get(models.Camera, camera_id):
         raise HTTPException(status_code=404, detail="Camera not found")
@@ -38,10 +54,27 @@ async def analyze_video(
         persons_total += len(dets["persons"])
         incident_engine.store_detections(db, camera_id, dets["persons"])
 
+        for f in fall.check_falls(dets["persons"], now=t):
+            snapshot = detector.save_snapshot(frame, prefix=f"fall{camera_id}")
+            clip = detector.save_clip(path, t)
+            inc = incident_engine.create_fall_incident(
+                db, camera_id, f, snapshot, clip,
+            )
+            incident_ids.append(inc.id)
+            await manager.broadcast({
+                "event": "incident",
+                "id": inc.id,
+                "type": inc.type,
+                "severity": inc.severity,
+                "description": inc.description,
+                "timestamp": str(inc.timestamp),
+            })
+
         for b in zones.zone_breaches(db, camera_id, dets["persons"], now=t):
             snapshot = detector.save_snapshot(frame, prefix=f"zone{camera_id}")
+            clip = detector.save_clip(path, t)
             inc = incident_engine.create_zone_breach(
-                db, camera_id, b, snapshot, path,
+                db, camera_id, b, snapshot, clip,
             )
             incident_ids.append(inc.id)
             await manager.broadcast({
@@ -55,8 +88,9 @@ async def analyze_video(
 
         for v in violations:
             snapshot = detector.save_snapshot(frame, prefix=f"cam{camera_id}")
+            clip = detector.save_clip(path, t)
             inc = incident_engine.create_ppe_violation(
-                db, camera_id, v, frame, snapshot, path,
+                db, camera_id, v, frame, snapshot, clip,
             )
             incident_ids.append(inc.id)
             await manager.broadcast({
@@ -67,6 +101,9 @@ async def analyze_video(
                 "description": inc.description,
                 "timestamp": str(inc.timestamp),
             })
+
+    if incident_ids:
+        background_tasks.add_task(_summarize, incident_ids)
 
     return schemas.AnalysisResult(
         camera_id=camera_id,

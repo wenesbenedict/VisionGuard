@@ -42,6 +42,27 @@ def store_detections(db: Session, camera_id: int, persons) -> None:
     db.commit()
 
 
+def create_fall_incident(db: Session, camera_id: int, fall, snapshot_path,
+                         video_path) -> models.Incident:
+    incident = models.Incident(
+        camera_id=camera_id,
+        type="FALL",
+        severity="HIGH",
+        confidence=fall["person"]["confidence"],
+        tracking_id=str(fall["person"]["track_id"]),
+        description=(
+            f"Potential fall detected for person #{fall['person']['track_id']} "
+            f"— requires verification"
+        ),
+        snapshot_url=snapshot_path,
+        video_url=video_path,
+    )
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    return incident
+
+
 def create_zone_breach(db: Session, camera_id: int, breach, snapshot_path,
                        video_path) -> models.Incident:
     incident = models.Incident(

@@ -2,6 +2,27 @@ import type { Camera, Incident } from './types'
 
 const base = '/api'
 
+export function getToken() {
+  return localStorage.getItem('vg_token') ?? ''
+}
+
+function authHeaders(): Record<string, string> {
+  const t = getToken()
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+export async function login(email: string, password: string) {
+  const r = await fetch(`${base}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!r.ok) throw new Error('Login failed')
+  const data = await r.json()
+  localStorage.setItem('vg_token', data.access_token)
+  return data
+}
+
 export async function getCameras(): Promise<Camera[]> {
   const r = await fetch(`${base}/cameras`)
   return r.json()
@@ -15,7 +36,7 @@ export async function getIncidents(): Promise<Incident[]> {
 export async function createCamera(data: Partial<Camera>): Promise<Camera> {
   const r = await fetch(`${base}/cameras`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(data),
   })
   return r.json()
@@ -34,7 +55,11 @@ export async function analyzeVideo(file: File, cameraId: number) {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('camera_id', String(cameraId))
-  const r = await fetch(`${base}/analyze/video`, { method: 'POST', body: fd })
+  const r = await fetch(`${base}/analyze/video`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
   return r.json()
 }
 

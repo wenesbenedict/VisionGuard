@@ -5,6 +5,7 @@ import Cameras from './pages/Cameras'
 import Analyze from './pages/Analyze'
 import Zones from './pages/Zones'
 import Analytics from './pages/Analytics'
+import Login from './pages/Login'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Link to="/analyze" className="hover:text-sky-400">Analyze</Link>
           <Link to="/zones" className="hover:text-sky-400">Zones</Link>
           <Link to="/analytics" className="hover:text-sky-400">Analytics</Link>
+          <Link to="/login" className="hover:text-sky-400">Login</Link>
         </nav>
         <main className="p-6 max-w-6xl mx-auto">
           <Routes>
@@ -27,6 +29,7 @@ export default function App() {
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/zones" element={<Zones />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/login" element={<Login />} />
           </Routes>
         </main>
       </div>

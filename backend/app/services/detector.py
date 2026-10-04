@@ -140,3 +140,28 @@ def save_snapshot(frame, prefix: str = "incident") -> str:
     path = os.path.join(SNAPSHOT_DIR, name)
     cv2.imwrite(path, frame)
     return path
+
+
+def save_clip(video_path: str, center_t: float, half: float = 2.0) -> str:
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    name = f"clip_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.mp4"
+    out_path = os.path.join(SNAPSHOT_DIR, name)
+    out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    start = max(0.0, center_t - half)
+    end = center_t + half
+    cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000)
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        if t > end:
+            break
+        out.write(frame)
+    cap.release()
+    out.release()
+    return out_path

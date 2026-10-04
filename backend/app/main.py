@@ -5,8 +5,9 @@ import os
 
 from .database import Base, engine
 from fastapi import WebSocket, WebSocketDisconnect
-from .routers import health, cameras, incidents, analyze, zones, analytics
+from .routers import health, cameras, incidents, analyze, zones, analytics, auth as auth_router
 from .services.ws import manager
+from .services import auth
 from .config import SNAPSHOT_DIR, UPLOAD_DIR
 
 Base.metadata.create_all(bind=engine)
@@ -31,6 +32,12 @@ app.include_router(incidents.router)
 app.include_router(analyze.router)
 app.include_router(zones.router)
 app.include_router(analytics.router)
+app.include_router(auth_router.router)
+
+from .database import SessionLocal
+
+with SessionLocal() as _db:
+    auth.seed_admin(_db)
 
 
 @app.websocket("/ws/incidents")
