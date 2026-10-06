@@ -1,14 +1,53 @@
 services:
-  db:
+  postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: visionguard
-      POSTGRES_PASSWORD: visionguard
-      POSTGRES_DB: visionguard
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-visionguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-visionguard}
+      POSTGRES_DB: ${POSTGRES_DB:-visionguard}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-visionguard} -d ${POSTGRES_DB:-visionguard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-visionguard}:${POSTGRES_PASSWORD:-visionguard}@postgres:5432/${POSTGRES_DB:-visionguard}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      JWT_SECRET: ${JWT_SECRET:-visionguard-dev-secret}
+      UPLOAD_DIR: /app/uploads
+      SNAPSHOT_DIR: /app/snapshots
+      PERSON_MODEL: ${PERSON_MODEL:-yolov8n.pt}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - vg_media:/app/snapshots
+      - vg_uploads:/app/uploads
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
 
 volumes:
   pgdata:
+  vg_media:
+  vg_uploads:
