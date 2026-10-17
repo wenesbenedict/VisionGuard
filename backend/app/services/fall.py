@@ -1,42 +1,55 @@
-"""Fall detection: temporal bbox posture analysis per track."""
+"""Potential-fall heuristic based on temporal bounding-box aspect ratios."""
 
 from collections import defaultdict, deque
-from typing import Deque, Dict, List, Tuple
-
-# track_id -> deque of (timestamp, aspect_ratio=height/width)
-_history: Dict[int, Deque[Tuple[float, float]]] = defaultdict(
-    lambda: deque(maxlen=10)
-)
-_fall_reported: Dict[int, bool] = defaultdict(bool)
+from typing import Deque
 
 NORMAL_RATIO = 1.5
 FALLBACK_RATIO = 1.1
 
 
-def check_falls(persons, now: float) -> List[dict]:
-    falls = []
-    seen = set()
-    for p in persons:
-        if p.get("track_id") is None:
-            continue
-        w = max(p["bbox"][2] - p["bbox"][0], 1e-6)
-        h = max(p["bbox"][3] - p["bbox"][1], 1e-6)
-        ratio = h / w
-        hist = _history[p["track_id"]]
-        hist.append((now, ratio))
-        seen.add(p["track_id"])
+class FallTracker:
+    """Track fall heuristics for one analyzed video, not process-global IDs."""
 
-        if len(hist) >= 2 and not _fall_reported[p["track_id"]]:
-            prev_ratios = [r for _, r in list(hist)[:-1]]
-            was_normal = any(r >= NORMAL_RATIO for r in prev_ratios)
-            horizontal_now = all(r <= FALLBACK_RATIO for _, r in list(hist)[-2:])
-            if was_normal and horizontal_now:
-                _fall_reported[p["track_id"]] = True
-                falls.append({"person": p, "ratio": ratio})
+    def __init__(self) -> None:
+        self._history: dict[int, Deque[tuple[float, float]]] = defaultdict(
+            lambda: deque(maxlen=10)
+        )
+        self._fall_reported: dict[int, bool] = defaultdict(bool)
 
-    for tid in list(_history.keys()):
-        if tid not in seen:
-            del _history[tid]
-            _fall_reported.pop(tid, None)
+    def check_falls(self, persons, now: float) -> list[dict]:
+        falls = []
+        seen = set()
+        for person in persons:
+            track_id = person.get("track_id")
+            if track_id is None:
+                continue
+            width = max(person["bbox"][2] - person["bbox"][0], 1e-6)
+            height = max(person["bbox"][3] - person["bbox"][1], 1e-6)
+            ratio = height / width
+            history = self._history[track_id]
+            history.append((now, ratio))
+            seen.add(track_id)
 
-    return falls
+            if len(history) >= 2 and not self._fall_reported[track_id]:
+                previous_ratios = [value for _, value in list(history)[:-1]]
+                was_upright = any(value >= NORMAL_RATIO for value in previous_ratios)
+                currently_horizontal = all(
+                    value <= FALLBACK_RATIO for _, value in list(history)[-2:]
+                )
+                if was_upright and currently_horizontal:
+                    self._fall_reported[track_id] = True
+                    falls.append({"person": person, "ratio": ratio})
+
+        for track_id in list(self._history):
+            if track_id not in seen:
+                del self._history[track_id]
+                self._fall_reported.pop(track_id, None)
+        return falls
+
+
+# Compatibility wrapper for callers outside the video-analysis route.
+_default_tracker = FallTracker()
+
+
+def check_falls(persons, now: float) -> list[dict]:
+    return _default_tracker.check_falls(persons, now)

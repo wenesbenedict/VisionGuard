@@ -1,30 +1,33 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import os
 
-from .database import Base, engine
-from fastapi import WebSocket, WebSocketDisconnect
-from .routers import health, cameras, incidents, analyze, zones, analytics, auth as auth_router
-from .services.ws import manager
+from .config import CORS_ALLOWED_ORIGINS
+from .database import Base, SessionLocal, engine
+from .routers import (
+    analytics,
+    analyze,
+    auth as auth_router,
+    cameras,
+    health,
+    incidents,
+    media,
+    zones,
+)
 from .services import auth
-from .config import SNAPSHOT_DIR, UPLOAD_DIR
+from .services.ws import manager
 
+# Fail closed rather than issue tokens signed with a public development key.
+auth.validate_secret()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="VisionGuard AI", version="0.1.0")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(CORS_ALLOWED_ORIGINS),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
-
-os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory="."), name="static")
 
 app.include_router(health.router)
 app.include_router(cameras.router)
@@ -33,16 +36,25 @@ app.include_router(analyze.router)
 app.include_router(zones.router)
 app.include_router(analytics.router)
 app.include_router(auth_router.router)
-
-from .database import SessionLocal
-
-with SessionLocal() as _db:
-    auth.seed_admin(_db)
+app.include_router(media.router)
 
 
 @app.websocket("/ws/incidents")
 async def ws_incidents(websocket: WebSocket):
-    await manager.connect(websocket)
+    token = auth.websocket_token(
+        websocket.headers.get("sec-websocket-protocol", "")
+    )
+    if not token:
+        await websocket.close(code=1008)
+        return
+    try:
+        with SessionLocal() as db:
+            auth.get_user_from_token(db, token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(websocket, subprotocol="visionguard")
     try:
         while True:
             await websocket.receive_text()

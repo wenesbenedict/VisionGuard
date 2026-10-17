@@ -34,6 +34,10 @@ def get_models():
     return _person_model, _ppe_model
 
 
+def ppe_detection_active() -> bool:
+    return _ppe_model is not None
+
+
 def _bbox(det) -> List[float]:
     return [float(v) for v in det.xyxy[0].tolist()]
 
@@ -108,12 +112,30 @@ def evaluate_ppe(persons, helmets, vests) -> List[Dict[str, Any]]:
     return violations
 
 
+def validate_video(video_path: str) -> None:
+    """Confirm OpenCV can open the upload and decode at least one frame."""
+    cap = cv2.VideoCapture(video_path)
+    try:
+        if not cap.isOpened():
+            raise ValueError("Cannot open uploaded video")
+        ok, _ = cap.read()
+        if not ok:
+            raise ValueError("Video contains no decodable frames")
+    finally:
+        cap.release()
+
+
 def analyze_video(video_path: str):
     """Yield (frame_index, frame, detections, violations) for sampled frames."""
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video: {video_path}")
+    ok, _ = cap.read()
+    if not ok:
+        cap.release()
+        raise ValueError("Video contains no decodable frames")
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     idx = 0
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0

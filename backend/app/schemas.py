@@ -80,3 +80,4 @@ class AnalysisResult(BaseModel):
     persons_detected: int
     incidents_created: int
     incident_ids: List[int]
+    ppe_detection_active: bool = False

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..services import auth
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
@@ -15,6 +16,7 @@ def list_incidents(
     type: Optional[str] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
+    user: models.User = Depends(auth.get_current_user),
 ):
     q = db.query(models.Incident)
     if camera_id is not None:
@@ -27,7 +29,11 @@ def list_incidents(
 
 
 @router.get("/{incident_id}", response_model=schemas.IncidentOut)
-def get_incident(incident_id: int, db: Session = Depends(get_db)):
+def get_incident(
+    incident_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(auth.get_current_user),
+):
     incident = db.get(models.Incident, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -36,7 +42,8 @@ def get_incident(incident_id: int, db: Session = Depends(get_db)):
 
 @router.patch("/{incident_id}/status", response_model=schemas.IncidentOut)
 def update_status(incident_id: int, body: schemas.IncidentStatusUpdate,
-                  db: Session = Depends(get_db)):
+                  db: Session = Depends(get_db),
+                  user: models.User = Depends(auth.require_role("ADMIN", "SAFETY_OFFICER", "SUPERVISOR"))):
     incident = db.get(models.Incident, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")

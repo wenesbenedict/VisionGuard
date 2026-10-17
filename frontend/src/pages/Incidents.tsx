@@ -4,19 +4,26 @@ import type { Incident } from '../types'
 
 export default function Incidents() {
   const [incidents, setIncidents] = useState<Incident[]>([])
+  const [error, setError] = useState('')
 
-  const refresh = () => getIncidents().then(setIncidents).catch(() => {})
+  const refresh = () => getIncidents().then(setIncidents).catch(err => setError(err.message || 'Failed to load incidents'))
   useEffect(() => { refresh() }, [])
 
   const cycle = async (i: Incident) => {
     const next = i.status === 'OPEN' ? 'UNDER_REVIEW' : i.status === 'UNDER_REVIEW' ? 'RESOLVED' : 'OPEN'
-    await setIncidentStatus(i.id, next)
-    refresh()
+    setError('')
+    try {
+      await setIncidentStatus(i.id, next)
+      refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update incident')
+    }
   }
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Incidents</h1>
+      {error && <p role="alert" className="text-red-400 mb-3">{error}</p>}
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-slate-400 border-b border-slate-700">

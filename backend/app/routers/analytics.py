@@ -6,12 +6,16 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
+from ..services import auth
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
 @router.get("/overview")
-def overview(db: Session = Depends(get_db)):
+def overview(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(auth.get_current_user),
+):
     incidents = db.query(models.Incident).all()
     today = datetime.utcnow().date()
     today_count = sum(1 for i in incidents if i.timestamp.date() == today)
@@ -33,7 +37,11 @@ def overview(db: Session = Depends(get_db)):
 
 
 @router.get("/incidents")
-def incidents_over_time(db: Session = Depends(get_db), days: int = 7):
+def incidents_over_time(
+    db: Session = Depends(get_db),
+    days: int = 7,
+    user: models.User = Depends(auth.get_current_user),
+):
     since = datetime.utcnow() - timedelta(days=days)
     incidents = (
         db.query(models.Incident)

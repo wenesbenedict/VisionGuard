@@ -15,7 +15,7 @@ class Camera(Base):
     name = Column(String, nullable=False)
     source = Column(String, nullable=False)  # upload path, webcam index, RTSP
     location = Column(String, default="")
-    status = Column(String, default="ONLINE")
+    status = Column(String, default="ONLINE")  # TODO: Replace with actual health check (heartbeat/stream verification)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     incidents = relationship("Incident", back_populates="camera")

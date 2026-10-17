@@ -11,7 +11,10 @@ router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
 
 @router.get("", response_model=List[schemas.CameraOut])
-def list_cameras(db: Session = Depends(get_db)):
+def list_cameras(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(auth.get_current_user),
+):
     return db.query(models.Camera).all()
 
 

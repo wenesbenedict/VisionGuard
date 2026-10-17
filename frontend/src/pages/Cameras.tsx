@@ -7,15 +7,26 @@ export default function Cameras() {
   const [name, setName] = useState('')
   const [source, setSource] = useState('')
   const [location, setLocation] = useState('')
+  const [error, setError] = useState<string>('')
 
-  const refresh = () => getCameras().then(setCameras).catch(() => {})
+  const refresh = () => {
+    getCameras().then(setCameras).catch(err => {
+      console.error('Failed to refresh cameras:', err)
+      setError('Failed to load cameras')
+    })
+  }
   useEffect(() => { refresh() }, [])
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
-    await createCamera({ name, source, location })
-    setName(''); setSource(''); setLocation('')
-    refresh()
+    setError('')
+    try {
+      await createCamera({ name, source, location })
+      setName(''); setSource(''); setLocation('')
+      refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create camera')
+    }
   }
 
   return (
@@ -27,6 +38,7 @@ export default function Cameras() {
         <input className="bg-slate-800 rounded p-2" placeholder="Location" value={location} onChange={e => setLocation(e.target.value)} />
         <button className="bg-sky-600 hover:bg-sky-500 rounded px-4 py-2">Add</button>
       </form>
+      {error && <p className="text-red-500">{error}</p>}
       <ul className="space-y-2">
         {cameras.map(c => (
           <li key={c.id} className="bg-slate-800 rounded p-3 flex justify-between">

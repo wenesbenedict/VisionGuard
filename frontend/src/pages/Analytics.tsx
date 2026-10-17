@@ -5,13 +5,14 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 export default function Analytics() {
   const [overview, setOverview] = useState<any>(null)
   const [overTime, setOverTime] = useState<any[]>([])
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    getOverview().then(setOverview).catch(() => {})
-    getIncidentsOverTime().then(setOverTime).catch(() => {})
+    getOverview().then(setOverview).catch(err => setError(err.message || 'Failed to load analytics'))
+    getIncidentsOverTime().then(setOverTime).catch(err => setError(err.message || 'Failed to load incident history'))
   }, [])
 
-  if (!overview) return <p className="text-slate-400">Loading…</p>
+  if (!overview) return <div>{error ? <p role="alert" className="text-red-400">{error}</p> : <p className="text-slate-400">Loading…</p>}</div>
 
   const byType = Object.entries(overview.by_type).map(([type, count]) => ({ type, count }))
   const byCamera = Object.entries(overview.by_camera).map(([camera, count]) => ({ camera, count }))
@@ -19,6 +20,7 @@ export default function Analytics() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Analytics</h1>
+      {error && <p role="alert" className="text-red-400 mb-3">{error}</p>}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Stat label="Total" value={overview.total} />
         <Stat label="Today" value={overview.today} />

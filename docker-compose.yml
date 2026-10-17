@@ -3,7 +3,7 @@ services:
     image: postgres:16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-visionguard}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-visionguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-visionguard}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -13,14 +13,16 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-visionguard}:${POSTGRES_PASSWORD:-visionguard}@postgres:5432/${POSTGRES_DB:-visionguard}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-visionguard}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-visionguard}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
-      JWT_SECRET: ${JWT_SECRET:-visionguard-dev-secret}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      MAX_VIDEO_SIZE_BYTES: ${MAX_VIDEO_SIZE_BYTES:-524288000}
       UPLOAD_DIR: /app/uploads
       SNAPSHOT_DIR: /app/snapshots
       PERSON_MODEL: ${PERSON_MODEL:-yolov8n.pt}
@@ -37,7 +39,7 @@ services:
       - vg_media:/app/snapshots
       - vg_uploads:/app/uploads
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   frontend:
     build: ./frontend
@@ -45,7 +47,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "80:80"
+      - "127.0.0.1:80:80"
 
 volumes:
   pgdata:

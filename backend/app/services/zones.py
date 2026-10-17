@@ -1,22 +1,15 @@
-"""Restricted-zone monitoring with dwell-time rule."""
+"""Restricted-zone monitoring with a video-time dwell threshold."""
 
 import time
-from collections import defaultdict
-from typing import Dict, List, Tuple
 
 from sqlalchemy.orm import Session
 
 from .. import models
 
-# (zone_id, track_id) -> (entry_epoch, breached_flag)
-_zone_timers: Dict[Tuple[int, int], Tuple[float, bool]] = defaultdict(
-    lambda: (0.0, False)
-)
-
 DWELL_SECONDS = 3.0
 
 
-def point_in_polygon(px: float, py: float, polygon: List[List[float]]) -> bool:
+def point_in_polygon(px: float, py: float, polygon: list[list[float]]) -> bool:
     inside = False
     n = len(polygon)
     j = n - 1
@@ -31,37 +24,57 @@ def point_in_polygon(px: float, py: float, polygon: List[List[float]]) -> bool:
     return inside
 
 
-def zone_breaches(db: Session, camera_id: int, persons, now: float = None) -> List[dict]:
-    zones = db.query(models.SafetyZone).filter(
-        models.SafetyZone.camera_id == camera_id
-    ).all()
-    breaches = []
-    if now is None:
-        now = time.time()
-    for zone in zones:
-        if not zone.coordinates or len(zone.coordinates) < 3:
-            continue
-        inside_now = set()
-        for p in persons:
-            if p.get("track_id") is None:
+class ZoneTracker:
+    """Dwell timers scoped to one video analysis request."""
+
+    def __init__(self) -> None:
+        self._timers: dict[tuple[int, int], tuple[float, bool]] = {}
+
+    def zone_breaches(
+        self,
+        db: Session,
+        camera_id: int,
+        persons,
+        now: float | None = None,
+    ) -> list[dict]:
+        camera_zones = db.query(models.SafetyZone).filter(
+            models.SafetyZone.camera_id == camera_id
+        ).all()
+        breaches = []
+        if now is None:
+            now = time.time()
+        for zone in camera_zones:
+            if not zone.coordinates or len(zone.coordinates) < 3:
                 continue
-            cx = (p["bbox"][0] + p["bbox"][2]) / 2
-            cy = (p["bbox"][1] + p["bbox"][3]) / 2
-            if point_in_polygon(cx, cy, zone.coordinates):
-                key = (zone.id, p["track_id"])
-                entry, breached = _zone_timers[key]
-                if entry == 0.0:
-                    _zone_timers[key] = (now, False)
-                    entry = now
-                inside_now.add(key)
-                if not breached and now - entry >= DWELL_SECONDS:
-                    _zone_timers[key] = (entry, True)
-                    breaches.append({
-                        "zone": zone,
-                        "person": p,
-                        "duration": now - entry,
-                    })
-        # reset timers for tracks that left
-        for key in [k for k in _zone_timers if k[0] == zone.id and k not in inside_now]:
-            del _zone_timers[key]
-    return breaches
+            inside_now = set()
+            for person in persons:
+                track_id = person.get("track_id")
+                if track_id is None:
+                    continue
+                center_x = (person["bbox"][0] + person["bbox"][2]) / 2
+                center_y = (person["bbox"][1] + person["bbox"][3]) / 2
+                if point_in_polygon(center_x, center_y, zone.coordinates):
+                    key = (zone.id, track_id)
+                    entry, breached = self._timers.get(key, (0.0, False))
+                    if entry == 0.0:
+                        entry, breached = now, False
+                        self._timers[key] = (entry, breached)
+                    inside_now.add(key)
+                    if not breached and now - entry >= DWELL_SECONDS:
+                        self._timers[key] = (entry, True)
+                        breaches.append({
+                            "zone": zone,
+                            "person": person,
+                            "duration": now - entry,
+                        })
+            for key in [key for key in self._timers if key[0] == zone.id and key not in inside_now]:
+                del self._timers[key]
+        return breaches
+
+
+# Compatibility wrapper for callers outside the video-analysis route.
+_default_tracker = ZoneTracker()
+
+
+def zone_breaches(db: Session, camera_id: int, persons, now: float | None = None) -> list[dict]:
+    return _default_tracker.zone_breaches(db, camera_id, persons, now)

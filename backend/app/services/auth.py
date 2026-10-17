@@ -1,6 +1,6 @@
 import hashlib
-import os
-import time
+import hmac
+import secrets
 from datetime import datetime, timedelta
 
 import jwt
@@ -8,15 +8,20 @@ from fastapi import Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..config import JWT_SECRET
 from ..database import get_db
 
-SECRET = os.getenv("JWT_SECRET", "visionguard-dev-secret")
 ALGORITHM = "HS256"
 TOKEN_HOURS = 12
 
 
-def hash_password(password: str, salt: str = None) -> str:
-    salt = salt or os.urandom(16).hex()
+def validate_secret() -> None:
+    if len(JWT_SECRET.encode("utf-8")) < 32:
+        raise RuntimeError("JWT_SECRET must be configured with at least 32 bytes")
+
+
+def hash_password(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
     return f"{salt}:{dk.hex()}"
 
@@ -26,16 +31,34 @@ def verify_password(password: str, stored: str) -> bool:
         salt, _ = stored.split(":", 1)
     except ValueError:
         return False
-    return hash_password(password, salt) == stored
+    return hmac.compare_digest(hash_password(password, salt), stored)
 
 
 def create_token(user: models.User) -> str:
+    validate_secret()
     payload = {
         "sub": str(user.id),
         "role": user.role,
+        "pwdv": hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest(),
         "exp": datetime.utcnow() + timedelta(hours=TOKEN_HOURS),
     }
-    return jwt.encode(payload, SECRET, algorithm=ALGORITHM)
+    return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+
+
+def get_user_from_token(db: Session, token: str) -> models.User:
+    validate_secret()
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = db.get(models.User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    current_password_version = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(str(payload.get("pwdv", "")), current_password_version):
+        raise HTTPException(status_code=401, detail="Session is no longer valid")
+    return user
 
 
 def get_current_user(
@@ -44,14 +67,16 @@ def get_current_user(
 ) -> models.User:
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing token")
-    try:
-        payload = jwt.decode(authorization[7:], SECRET, algorithms=[ALGORITHM])
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user = db.get(models.User, int(payload["sub"]))
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+    return get_user_from_token(db, authorization[7:])
+
+
+def websocket_token(protocol_header: str) -> str | None:
+    for protocol in protocol_header.split(","):
+        protocol = protocol.strip()
+        if protocol.startswith("vg-auth."):
+            token = protocol[len("vg-auth."):]
+            return token or None
+    return None
 
 
 def require_role(*roles: str):
@@ -61,14 +86,3 @@ def require_role(*roles: str):
         return user
 
     return dep
-
-
-def seed_admin(db: Session):
-    if db.query(models.User).count() == 0:
-        db.add(models.User(
-            name="Admin",
-            email="admin@visionguard.local",
-            password_hash=hash_password("admin123"),
-            role="ADMIN",
-        ))
-        db.commit()
